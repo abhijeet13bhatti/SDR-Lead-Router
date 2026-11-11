@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SDR Round-Robin Lead Router</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .card-pop { transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+    .card-pop:hover { transform: translateY(-2px); }
+    @keyframes pulse-ring {
+      0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); }
+      70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+    .up-next-ring { animation: pulse-ring 2s infinite; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 min-h-screen transition-colors duration-200">
+
+  <!-- Top Navigation Bar -->
+  <header class="sticky top-0 z-30 bg-white/90 dark:bg-slate-800/90 backdrop-blur border-b border-slate-200 dark:border-slate-700">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-bold shadow-sm shadow-emerald-600/30">
+          <i data-lucide="shuffle" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">SDR Lead Router</h1>
+            <span id="syncStatusBadge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span id="syncText">Live Team Sync</span>
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Salesforce Round-Robin Queue • Room: <code id="roomDisplay" class="font-mono font-semibold text-slate-700 dark:text-slate-300">LII-SDR-FLOOR-2026</code></p>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="flex items-center gap-2">
+        <button onclick="toggleSound()" id="soundBtn" class="p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-medium flex items-center gap-1.5" title="Toggle Sound Chime">
+          <i data-lucide="volume-2" id="soundIcon" class="w-4 h-4 text-emerald-600"></i>
+        </button>
+
+        <button onclick="toggleTheme()" class="p-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-medium flex items-center gap-1.5" title="Switch Light/Dark Theme">
+          <i data-lucide="sun" class="w-4 h-4 hidden dark:block text-amber-400"></i>
+          <i data-lucide="moon" class="w-4 h-4 block dark:hidden text-slate-600"></i>
+          <span class="hidden sm:inline">Theme</span>
+        </button>
+
+        <button onclick="openDeployModal()" class="px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition">
+          <i data-lucide="share-2" class="w-4 h-4"></i>
+          <span>Host & Pin to Teams</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+    <!-- HERO BANNER: UP NEXT SPOTLIGHT -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      <div class="lg:col-span-2 bg-white dark:bg-slate-800 rounded-2xl p-6 border-2 border-emerald-500/80 shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 relative overflow-hidden">
+        <div class="space-y-2 z-10">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-xs font-bold uppercase tracking-wider">
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+            Up Next for Inbound Lead
+          </div>
+          <div class="flex items-center gap-3 pt-1">
+            <div id="heroAvatar" class="w-14 h-14 rounded-2xl bg-emerald-600 text-white font-extrabold text-xl flex items-center justify-center shadow-md up-next-ring">
+              AB
+            </div>
+            <div>
+              <h2 id="heroName" class="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">Loading...</h2>
+              <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2 mt-0.5">
+                <span>On Deck Next: <strong id="onDeckName" class="text-slate-700 dark:text-slate-200">—</strong></span>
+                <span>•</span>
+                <span>Today's Leads: <strong id="heroCount" class="text-emerald-600 dark:text-emerald-400">0</strong></span>
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Primary Action Buttons -->
+        <div class="flex flex-col sm:items-end gap-2.5 w-full sm:w-auto z-10">
+          <button onclick="quickAssignLead()" class="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold text-sm shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 transition">
+            <i data-lucide="zap" class="w-4 h-4"></i>
+            <span>Assign Next Lead (Space)</span>
+          </button>
+          <div class="flex items-center gap-2 w-full sm:w-auto">
+            <button onclick="openCustomModal()" class="flex-1 sm:flex-initial px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition">
+              <i data-lucide="file-plus-2" class="w-3.5 h-3.5"></i>
+              <span>Add Lead Details (C)</span>
+            </button>
+            <button onclick="copyUpNextName()" class="px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5 transition" title="Copy Salesforce Name format">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+              <span>Copy SF Name</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI / Quick Stats Card -->
+      <div class="bg-white dark:bg-slate-800 rounded-2xl p-5 border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Floor Snapshot</span>
+          <button onclick="undoLastAssignment()" class="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Undo Last
+          </button>
+        </div>
+
+        <div class="grid grid-cols-3 gap-3 my-4">
+          <div class="p-3 rounded-xl bg-slate-50 dark:bg-slate-700/50 border border-slate-100 dark:border-slate-700">
+            <div class="text-xs text-slate-500 dark:text-slate-400">Total Today</div>
+            <div id="statTotalLeads" class="text-2xl font-extrabold text-slate-900 dark:text-white mt-0.5">0</div>
+          </div>
+          <div class="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900">
+            <div class="text-xs text-emerald-700 dark:text-emerald-300">Active Reps</div>
+            <div id="statActiveReps" class="text-2xl font-extrabold text-emerald-700 dark:text-emerald-400 mt-0.5">10</div>
+          </div>
+          <div class="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-900">
+            <div class="text-xs text-amber-700 dark:text-amber-300">Away / OOO</div>
+            <div id="statAwayReps" class="text-2xl font-extrabold text-amber-700 dark:text-amber-400 mt-0.5">0</div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-700">
+          <span>Auto-copies owner to clipboard</span>
+          <button onclick="resetCountsConfirm()" class="text-rose-600 dark:text-rose-400 hover:underline font-medium">Reset Day</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SDR ROTATION ROSTER GRID -->
+    <section class="space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="users" class="w-4 h-4 text-emerald-600"></i>
+            <span>Active Rotation Queue (Chris Excluded)</span>
+          </h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Click any rep's status pill to toggle between <strong>Active</strong> and <strong>Away (Lunch/PTO)</strong>, or click <strong>Set Next</strong> to jump the queue.</p>
+        </div>
+      </div>
+
+      <div id="repGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5">
+        <!-- Dynamically populated rep cards -->
+      </div>
+    </section>
+
+    <!-- LIVE SALESFORCE ASSIGNMENT FEED -->
+    <section class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="history" class="w-4 h-4 text-emerald-600"></i>
+            <span>Live Lead Dispatch Log</span>
+          </h3>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Real-time audit history so everyone knows who claimed the last lead.</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="exportCSV()" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>Export CSV</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-slate-200 dark:border-slate-700 text-[11px] font-bold uppercase tracking-wider text-slate-400 bg-slate-50/50 dark:bg-slate-800/50">
+              <th class="py-3 px-4">Time</th>
+              <th class="py-3 px-4">Assigned SDR (SF Format)</th>
+              <th class="py-3 px-4">Company / Lead Note</th>
+              <th class="py-3 px-4">Channel / Tier</th>
+              <th class="py-3 px-4 text-right">Quick Copy</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody" class="divide-y divide-slate-100 dark:divide-slate-700/60 text-sm">
+            <!-- Populated dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL 1: CUSTOM LEAD DETAILS -->
+  <div id="customModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-2xl max-w-md w-full p-6 border border-slate-200 dark:border-slate-700 shadow-xl space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-slate-900 dark:text-white">Assign Lead with Details</h3>
+        <button onclick="closeCustomModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Company / Account Name</label>
+          <input id="leadCompanyInput" type="text" placeholder="e.g., Bernhardt Furniture / Trumbull" class="w-full px-3.5 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-emerald-500 outline-none" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">Lead Source / Tier</label>
+          <select id="leadTierInput" class="w-full px-3.5 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm focus:ring-2 focus:ring-emerald-500 outline-none">
+            <option value="Inbound Web Lead">Inbound Web Lead</option>
+            <option value="Salesforce Queue">Salesforce Queue</option>
+            <option value="Trade / Tariff Consult">Trade / Tariff Consult</option>
+            <option value="Freight Quote Request">Freight Quote Request</option>
+            <option value="High-Priority / Hot">High-Priority / Hot</option>
+          </select>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeCustomModal()" class="px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold">Cancel</button>
+        <button onclick="submitCustomLead()" class="px-5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold">Assign & Copy Rep</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: NETLIFY & SHAREPOINT DEPLOY WIZARD -->
+  <div id="deployModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-800 rounded-2xl max-w-lg w-full p-6 border border-slate-200 dark:border-slate-700 shadow-xl space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
+            <i data-lucide="rocket" class="w-4 h-4"></i>
+          </div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">Free Permanent Hosting + Teams Tab</h3>
+        </div>
+        <button onclick="closeDeployModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+
+      <div class="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-2 text-xs text-slate-600 dark:text-slate-300">
+        <p class="font-bold text-slate-900 dark:text-white">Step 1: Download this ready-to-host file</p>
+        <button onclick="downloadSelfHTML()" class="w-full py-2.5 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2 shadow-sm">
+          <i data-lucide="download" class="w-4 h-4"></i>
+          <span>Download index.html (Pre-wired for Team Sync)</span>
+        </button>
+      </div>
+
+      <div class="space-y-2 text-xs text-slate-600 dark:text-slate-300">
+        <p class="font-bold text-slate-900 dark:text-white">Step 2: Choose your free permanent host (No 7-day expiry)</p>
+        <div class="p-3 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1">
+          <div class="font-semibold text-indigo-600 dark:text-indigo-400">Option A: Netlify Drop (30 Seconds)</div>
+          <p>Put <code>index.html</code> inside a new folder on your desktop, go to <strong>app.netlify.com/drop</strong>, and drag the folder onto the page for an instant permanent <code>.netlify.app</code> link.</p>
+        </div>
+        <div class="p-3 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1">
+          <div class="font-semibold text-emerald-600 dark:text-emerald-400">Option B: Internal Microsoft Teams / SharePoint Trick</div>
+          <p>Rename the downloaded file from <code>index.html</code> to <code>lead-router.aspx</code> and upload it to the <strong>Files</strong> tab of your SDR Microsoft Teams channel. Clicking it opens the live app inside your corporate Microsoft login.</p>
+        </div>
+      </div>
+
+      <div class="flex justify-end pt-2">
+        <button onclick="closeDeployModal()" class="px-4 py-2 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-xs font-semibold">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-5 right-5 z-50 hidden bg-slate-900 text-white px-4 py-3 rounded-xl shadow-lg border border-slate-700 text-xs font-semibold flex items-center gap-2.5">
+    <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
+    <span id="toastMsg">Copied to clipboard!</span>
+  </div>
+
+  <script>
+    // Initial 10 SDR Roster (Christopher Croom excluded)
+    const DEFAULT_REPS = [
+      { id: 'dana', name: 'Abramowski, Dana', short: 'Dana A.', initials: 'DA', color: 'bg-blue-600', active: true, count: 0 },
+      { id: 'jessica', name: 'Andersen, Jessica', short: 'Jessica A.', initials: 'JA', color: 'bg-purple-600', active: true, count: 0 },
+      { id: 'abhi', name: 'Bhatti, Abhijeet', short: 'Abhijeet B.', initials: 'AB', color: 'bg-emerald-600', active: true, count: 0 },
+      { id: 'vrushali', name: 'Kamaliya, Vrushali', short: 'Vrushali K.', initials: 'VK', color: 'bg-rose-600', active: true, count: 0 },
+      { id: 'george', name: 'Moreno, George', short: 'George M.', initials: 'GM', color: 'bg-amber-600', active: true, count: 0 },
+      { id: 'ryan', name: 'Murphy, Ryan', short: 'Ryan M.', initials: 'RM', color: 'bg-cyan-600', active: true, count: 0 },
+      { id: 'carson', name: 'Ouellette, Carson', short: 'Carson O.', initials: 'CO', color: 'bg-indigo-600', active: true, count: 0 },
+      { id: 'joshua', name: 'Prenatt, Joshua', short: 'Joshua P.', initials: 'JP', color: 'bg-teal-600', active: true, count: 0 },
+      { id: 'carolina', name: 'Stevenson, Carolina', short: 'Carolina S.', initials: 'CS', color: 'bg-pink-600', active: true, count: 0 },
+      { id: 'keerthana', name: 'Veerapandian, Keerthana', short: 'Keerthana V.', initials: 'KV', color: 'bg-violet-600', active: true, count: 0 }
+    ];
+
+    const ROOM_KEY = 'LII_SDR_ROUTER_2026_V2';
+    const CLOUD_URL = 'https://kvdb.io/A2x9kLp7YmQvW3zR8nJt4B/' + ROOM_KEY;
+
+    let state = {
+      reps: JSON.parse(JSON.stringify(DEFAULT_REPS)),
+      currentIndex: 0,
+      history: [],
+      updatedAt: 0
+    };
+
+    let soundEnabled = true;
+    const bc = ('BroadcastChannel' in window) ? new BroadcastChannel(ROOM_KEY) : null;
+
+    // Load Local & Cloud State
+    function initApp() {
+      const savedTheme = localStorage.getItem('sdr_theme') || 'light';
+      document.documentElement.className = savedTheme;
+
+      const localData = localStorage.getItem(ROOM_KEY);
+      if (localData) {
+        try { state = JSON.parse(localData); } catch (e) {}
+      }
+      EnsureValidTurn();
+      renderAll();
+      pullFromCloud();
+      setInterval(pullFromCloud, 3500);
+
+      if (bc) {
+        bc.onmessage = (ev) => {
+          if (ev.data && ev.data.updatedAt > state.updatedAt) {
+            state = ev.data;
+            localStorage.setItem(ROOM_KEY, JSON.stringify(state));
+            renderAll();
+          }
+        };
+      }
+    }
+
+    async function pushState() {
+      state.updatedAt = Date.now();
+      localStorage.setItem(ROOM_KEY, JSON.stringify(state));
+      if (bc) bc.postMessage(state);
+      renderAll();
+      try {
+        await fetch(CLOUD_URL, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(state)
+        });
+      } catch (e) {
+        // Fallback silently to local/tab sync if firewall blocks external KV
+      }
+    }
+
+    async function pullFromCloud() {
+      try {
+        const res = await fetch(CLOUD_URL);
+        if (res.ok) {
+          const remote = await res.json();
+          if (remote && remote.updatedAt && remote.updatedAt > state.updatedAt) {
+            state = remote;
+            localStorage.setItem(ROOM_KEY, JSON.stringify(state));
+            renderAll();
+          }
+        }
+      } catch (e) {}
+    }
+
+    function EnsureValidTurn() {
+      const activeReps = state.reps.filter(r => r.active);
+      if (activeReps.length === 0) return;
+      if (!state.reps[state.currentIndex] || !state.reps[state.currentIndex].active) {
+        let idx = state.currentIndex;
+        for (let i = 0; i < state.reps.length; i++) {
+          idx = (idx + 1) % state.reps.length;
+          if (state.reps[idx].active) {
+            state.currentIndex = idx;
+            break;
+          }
+        }
+      }
+    }
+
+    function getNextActiveIndex(fromIndex) {
+      for (let i = 1; i <= state.reps.length; i++) {
+        const candidate = (fromIndex + i) % state.reps.length;
+        if (state.reps[candidate].active) return candidate;
+      }
+      return fromIndex;
+    }
+
+    function playChime() {
+      if (!soundEnabled) return;
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.09); // A5
+        gain.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.35);
+      } catch (e) {}
+    }
+
+    function assignLead(company = 'Inbound Salesforce Lead', tier = 'Salesforce Queue') {
+      EnsureValidTurn();
+      const activeReps = state.reps.filter(r => r.active);
+      if (activeReps.length === 0) {
+        showToast('No active reps available! Mark someone Active first.');
+        return;
+      }
+
+      const rep = state.reps[state.currentIndex];
+      rep.count += 1;
+
+      const entry = {
+        id: 'L-' + Date.now(),
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        repId: rep.id,
+        repName: rep.name,
+        company: company || 'Inbound Salesforce Lead',
+        tier: tier || 'Salesforce Queue',
+        prevIndex: state.currentIndex
+      };
+
+      state.history.unshift(entry);
+      if (state.history.length > 50) state.history.pop();
+
+      // Copy Salesforce Owner name automatically
+      navigator.clipboard?.writeText(rep.name).catch(() => {});
+
+      // Advance pointer to next active rep
+      state.currentIndex = getNextActiveIndex(state.currentIndex);
+
+      playChime();
+      showToast(`Assigned to ${rep.name} (Copied for Salesforce!)`);
+      pushState();
+    }
+
+    function quickAssignLead() {
+      assignLead('Inbound Salesforce Lead', 'Salesforce Queue');
+    }
+
+    function toggleRepStatus(index) {
+      state.reps[index].active = !state.reps[index].active;
+      EnsureValidTurn();
+      pushState();
+    }
+
+    function setRepUpNext(index) {
+      state.reps[index].active = true;
+      state.currentIndex = index;
+      showToast(`${state.reps[index].name} is now Up Next!`);
+      pushState();
+    }
+
+    function undoLastAssignment() {
+      if (state.history.length === 0) {
+        showToast('Nothing to undo yet.');
+        return;
+      }
+      const last = state.history.shift();
+      const repIndex = state.reps.findIndex(r => r.id === last.repId);
+      if (repIndex !== -1) {
+        state.reps[repIndex].count = Math.max(0, state.reps[repIndex].count - 1);
+        state.currentIndex = repIndex;
+      }
+      showToast(`Undid assignment for ${last.repName}`);
+      pushState();
+    }
+
+    function resetCountsConfirm() {
+      if (!confirm('Reset all daily lead counts and clear history for a new shift?')) return;
+      state.reps.forEach(r => r.count = 0);
+      state.history = [];
+      state.currentIndex = 0;
+      EnsureValidTurn();
+      pushState();
+      showToast('Daily counts reset!');
+    }
+
+    function copyText(txt) {
+      navigator.clipboard?.writeText(txt);
+      showToast(`Copied "${txt}" to clipboard!`);
+    }
+
+    function copyUpNextName() {
+      const rep = state.reps[state.currentIndex];
+      if (rep) copyText(rep.name);
+    }
+
+    function renderAll() {
+      EnsureValidTurn();
+      const currentRep = state.reps[state.currentIndex];
+      const nextIdx = getNextActiveIndex(state.currentIndex);
+      const onDeckRep = state.reps[nextIdx];
+
+      // Hero Banner
+      if (currentRep) {
+        document.getElementById('heroAvatar').textContent = currentRep.initials;
+        document.getElementById('heroName').textContent = currentRep.name;
+        document.getElementById('heroCount').textContent = currentRep.count;
+        document.getElementById('onDeckName').textContent = onDeckRep ? onDeckRep.short : '—';
+      }
+
+      // Stats
+      const totalLeads = state.reps.reduce((acc, r) => acc + r.count, 0);
+      const activeCount = state.reps.filter(r => r.active).length;
+      document.getElementById('statTotalLeads').textContent = totalLeads;
+      document.getElementById('statActiveReps').textContent = activeCount;
+      document.getElementById('statAwayReps').textContent = state.reps.length - activeCount;
+
+      // Roster Grid
+      const grid = document.getElementById('repGrid');
+      grid.innerHTML = '';
+      state.reps.forEach((rep, idx) => {
+        const isUpNext = rep.active && idx === state.currentIndex;
+        const isOnDeck = rep.active && idx === nextIdx && activeCount > 1;
+
+        const card = document.createElement('div');
+        card.className = `card-pop rounded-2xl p-4 border transition flex flex-col justify-between gap-3 ${
+          !rep.active
+            ? 'bg-slate-100/70 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700/60 opacity-60'
+            : isUpNext
+            ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-2 border-emerald-500 shadow-sm'
+            : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm'
+        }`;
+
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex items-center gap-2.5">
+              <div class="w-10 h-10 rounded-xl ${rep.color} text-white font-bold text-sm flex items-center justify-center shadow-sm">
+                ${rep.initials}
+              </div>
+              <div>
+                <div class="font-bold text-sm text-slate-900 dark:text-white leading-tight">${rep.name}</div>
+                <div class="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+                  ${isUpNext ? '<span class="text-emerald-600 dark:text-emerald-400 font-bold">★ UP NEXT</span>' : isOnDeck ? '<span class="text-indigo-600 dark:text-indigo-400 font-semibold">• On Deck</span>' : `Queue #${idx + 1}`}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-700/70">
+            <div>
+              <span class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold block">Today</span>
+              <span class="text-lg font-extrabold text-slate-900 dark:text-white">${rep.count} <span class="text-xs font-normal text-slate-400">leads</span></span>
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <button onclick="setRepUpNext(${idx})" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs" title="Make Up Next immediately">
+                <i data-lucide="arrow-up-circle" class="w-4 h-4"></i>
+              </button>
+              <button onclick="copyText('${rep.name}')" class="p-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 text-xs" title="Copy Salesforce Name">
+                <i data-lucide="copy" class="w-4 h-4"></i>
+              </button>
+              <button onclick="toggleRepStatus(${idx})" class="px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                rep.active
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 hover:bg-emerald-200'
+                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 hover:bg-amber-200'
+              }">
+                ${rep.active ? 'Active' : 'Away'}
+              </button>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+      // History Table
+      const tbody = document.getElementById('historyTableBody');
+      if (state.history.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-xs text-slate-400">No leads dispatched yet today. Click <strong>Assign Next Lead</strong> when a lead drops in Salesforce!</td></tr>`;
+      } else {
+        tbody.innerHTML = state.history.map(item => `
+          <tr class="hover:bg-slate-50/80 dark:hover:bg-slate-700/40 transition">
+            <td class="py-3 px-4 font-mono text-xs text-slate-500 dark:text-slate-400">${item.time}</td>
+            <td class="py-3 px-4 font-bold text-slate-900 dark:text-white">${item.repName}</td>
+            <td class="py-3 px-4 text-slate-700 dark:text-slate-300 font-medium">${item.company}</td>
+            <td class="py-3 px-4">
+              <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200">${item.tier}</span>
+            </td>
+            <td class="py-3 px-4 text-right">
+              <button onclick="copyText('${item.repName}')" class="px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                Copy Owner
+              </button>
+            </td>
+          </tr>
+        `).join('');
+      }
+
+      lucide.createIcons();
+    }
+
+    // Theme & Sound Controls
+    function toggleTheme() {
+      const root = document.documentElement;
+      const next = root.classList.contains('dark') ? 'light' : 'dark';
+      root.className = next;
+      localStorage.setItem('sdr_theme', next);
+    }
+
+    function toggleSound() {
+      soundEnabled = !soundEnabled;
+      document.getElementById('soundIcon').setAttribute('data-lucide', soundEnabled ? 'volume-2' : 'volume-x');
+      lucide.createIcons();
+      showToast(soundEnabled ? 'Audio chime enabled' : 'Audio chime muted');
+    }
+
+    // Modals
+    function openCustomModal() {
+      document.getElementById('customModal').classList.remove('hidden');
+      document.getElementById('leadCompanyInput').focus();
+    }
+    function closeCustomModal() {
+      document.getElementById('customModal').classList.add('hidden');
+      document.getElementById('leadCompanyInput').value = '';
+    }
+    function submitCustomLead() {
+      const company = document.getElementById('leadCompanyInput').value.trim() || 'Inbound Salesforce Lead';
+      const tier = document.getElementById('leadTierInput').value;
+      closeCustomModal();
+      assignLead(company, tier);
+    }
+
+    function openDeployModal() {
+      document.getElementById('deployModal').classList.remove('hidden');
+    }
+    function closeDeployModal() {
+      document.getElementById('deployModal').classList.add('hidden');
+    }
+
+    function downloadSelfHTML() {
+      const htmlContent = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+      const blob = new Blob([htmlContent], { type: 'text/html' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'index.html';
+      a.click();
+      showToast('Downloaded index.html!');
+    }
+
+    function exportCSV() {
+      if (state.history.length === 0) {
+        showToast('No lead history to export yet.');
+        return;
+      }
+      const rows = [['Time', 'Assigned SDR', 'Company / Note', 'Channel']];
+      state.history.forEach(h => rows.push([h.time, `"${h.repName}"`, `"${h.company}"`, `"${h.tier}"`]));
+      const csv = rows.map(r => r.join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `sdr_lead_log_${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      document.getElementById('toastMsg').textContent = msg;
+      t.classList.remove('hidden');
+      clearTimeout(window._toastTimer);
+      window._toastTimer = setTimeout(() => t.classList.add('hidden'), 2800);
+    }
+
+    // Keyboard Shortcuts
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        quickAssignLead();
+      } else if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault();
+        openCustomModal();
+      }
+    });
+
+    window.addEventListener('DOMContentLoaded', initApp);
+  </script>
+</body>
+</html>
